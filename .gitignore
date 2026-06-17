@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Frontend build output
+.next/
+out/
+dist/
+build/
+
+# Go build output
+bin/
+*.exe
+*.test
+coverage.out
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Docker and local runtime data
+postgres-data/
+redis-data/
+rabbitmq-data/
+
+# Test output
+stress/results/
+coverage/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
