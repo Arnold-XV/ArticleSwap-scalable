@@ -13,6 +13,7 @@ bin/
 *.exe
 *.test
 coverage.out
+*.tsbuildinfo
 
 # Environment files
 .env
@@ -37,4 +38,3 @@ coverage/
 Thumbs.db
 .vscode/
 .idea/
-
