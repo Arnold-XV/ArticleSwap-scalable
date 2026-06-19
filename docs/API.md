@@ -259,6 +259,46 @@ Maksimal 100 artikel, diurutkan `created_at DESC`.
 
 ---
 
+## GET /metrics/summary
+
+Mengembalikan ringkasan metrik sistem. Berguna untuk data poster dan monitoring setelah stress test.
+
+**Response 200 OK**
+
+```json
+{
+  "total_users": 5,
+  "total_articles": 42,
+  "articles_by_status": {
+    "queued": 3,
+    "processed": 35,
+    "degraded": 2,
+    "failed": 2
+  },
+  "pipeline_events": 168,
+  "idempotency_keys": 42,
+  "processing_summary": {
+    "stemming_done": 37,
+    "stemming_queued": 3,
+    "stemming_failed": 2,
+    "wordcloud_done": 35,
+    "wordcloud_queued": 3,
+    "wordcloud_failed": 4
+  }
+}
+```
+
+| Field | Keterangan |
+| --- | --- |
+| `total_users` | Jumlah user terdaftar |
+| `total_articles` | Jumlah total artikel |
+| `articles_by_status` | Breakdown artikel per status |
+| `pipeline_events` | Jumlah event pipeline yang tercatat |
+| `idempotency_keys` | Jumlah idempotency key tersimpan |
+| `processing_summary` | Breakdown status stemming dan wordcloud |
+
+---
+
 ## Rate Limiting
 
 Semua endpoint dilindungi rate limiter berbasis Redis. Default: **60 request per menit** per IP.
@@ -322,3 +362,10 @@ curl http://localhost:8080/articles/ID_ARTIKEL
 ```bash
 curl http://localhost:8080/users/ID_PENERIMA/inbox
 ```
+
+### Lihat metrics summary
+
+```bash
+curl http://localhost:8080/metrics/summary
+```
+

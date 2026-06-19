@@ -54,6 +54,7 @@ func main() {
 	usersHandler := &handler.UsersHandler{Pool: pool}
 	articlesHandler := &handler.ArticlesHandler{Pool: pool, Broker: mq}
 	inboxHandler := &handler.InboxHandler{Pool: pool}
+	metricsHandler := &handler.MetricsHandler{Pool: pool}
 
 	// Build a custom router using http.HandlerFunc for clean path matching.
 	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -74,6 +75,9 @@ func main() {
 
 		case strings.HasPrefix(path, "/users/") && strings.HasSuffix(path, "/inbox"):
 			inboxHandler.ServeHTTP(w, r)
+
+		case path == "/metrics/summary":
+			metricsHandler.ServeHTTP(w, r)
 
 		default:
 			w.Header().Set("Content-Type", "application/json")
