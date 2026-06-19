@@ -88,6 +88,7 @@ export function getMockUsers(): User[] {
 }
 
 export function getMockInbox(userId: string): ArticleSummary[] {
+  refreshMockPipeline();
   return mockArticles
     .filter((article) => article.receiverId === userId)
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
@@ -95,6 +96,7 @@ export function getMockInbox(userId: string): ArticleSummary[] {
 }
 
 export function getMockArticle(articleId: string): ArticleDetail {
+  refreshMockPipeline();
   const article = mockArticles.find((item) => item.id === articleId);
   if (!article) {
     throw new Error("Artikel mock tidak ditemukan");
@@ -146,6 +148,106 @@ export function submitMockArticle(input: SubmitArticleInput): SubmitArticleResul
   };
 }
 
+function refreshMockPipeline() {
+  const currentTime = Date.now();
+
+  mockArticles = mockArticles.map((article) => {
+    if (article.status !== "processing") return article;
+
+    const ageInSeconds = (currentTime - Date.parse(article.createdAt)) / 1000;
+    if (ageInSeconds < 5) {
+      return {
+        ...article,
+        stemmingStatus: ageInSeconds >= 2 ? "processing" : article.stemmingStatus,
+        wordcloudStatus: ageInSeconds >= 3 ? "processing" : article.wordcloudStatus,
+        events:
+          article.events.length > 1
+            ? article.events
+            : [
+                ...article.events,
+                {
+                  serviceName: "frontend-mock",
+                  eventType: "processing",
+                  message: "Mock pipeline sedang mensimulasikan worker stemming dan word cloud.",
+                  createdAt: new Date(currentTime).toISOString()
+                }
+              ]
+      };
+    }
+
+    const stemmedContent = createMockStem(article.content);
+    const wordFrequencies = createWordFrequencies(stemmedContent);
+    const updatedAt = new Date(currentTime).toISOString();
+
+    return {
+      ...article,
+      status: "processed",
+      stemmedContent,
+      wordFrequencies,
+      stemmingStatus: "processed",
+      wordcloudStatus: "processed",
+      updatedAt,
+      events: [
+        ...article.events,
+        {
+          serviceName: "stemmer-worker",
+          eventType: "processed",
+          message: "Stemming mock selesai dan hasil siap ditampilkan.",
+          createdAt: updatedAt
+        },
+        {
+          serviceName: "wordcloud-worker",
+          eventType: "processed",
+          message: "Frekuensi kata mock selesai dihitung untuk visual word cloud.",
+          createdAt: updatedAt
+        }
+      ]
+    };
+  });
+}
+
+function createMockStem(content: string) {
+  const stopWords = new Set([
+    "dan",
+    "yang",
+    "di",
+    "ke",
+    "dari",
+    "untuk",
+    "dengan",
+    "agar",
+    "lebih",
+    "ini",
+    "itu",
+    "adalah"
+  ]);
+
+  return tokenize(content)
+    .filter((word) => !stopWords.has(word))
+    .map((word) =>
+      word
+        .replace(/(kan|nya|lah|pun)$/u, "")
+        .replace(/^(meng|meny|men|mem|ber|ter|per|di|ke)/u, "")
+    )
+    .filter(Boolean)
+    .join(" ");
+}
+
+function createWordFrequencies(content: string) {
+  return tokenize(content).reduce<Record<string, number>>((frequencies, word) => {
+    frequencies[word] = (frequencies[word] ?? 0) + 1;
+    return frequencies;
+  }, {});
+}
+
+function tokenize(content: string) {
+  return content
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 2);
+}
+
 function toSummary(article: ArticleDetail): ArticleSummary {
   return {
     id: article.id,
@@ -157,4 +259,3 @@ function toSummary(article: ArticleDetail): ArticleSummary {
     updatedAt: article.updatedAt
   };
 }
-
