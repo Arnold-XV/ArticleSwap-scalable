@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -20,6 +21,34 @@ import (
 type ArticlesHandler struct {
 	Pool   *pgxpool.Pool
 	Broker *broker.Broker
+}
+
+// --- Struct response yang match persis dengan frontend/types/articles.ts ---
+
+type pipelineEventResponse struct {
+	ServiceName string    `json:"serviceName"`
+	EventType   string    `json:"eventType"`
+	Message     string    `json:"message"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type articleDetailResponse struct {
+	ID              string                  `json:"id"`
+	SenderID        string                  `json:"senderId"`
+	SenderName      string                  `json:"senderName"`
+	ReceiverID      string                  `json:"receiverId"`
+	ReceiverName    string                  `json:"receiverName"`
+	Title           string                  `json:"title"`
+	Content         string                  `json:"content"`
+	ContentHash     string                  `json:"contentHash"`
+	Status          string                  `json:"status"`
+	StemmedContent  *string                 `json:"stemmedContent"`
+	WordFrequencies map[string]int          `json:"wordFrequencies"`
+	StemmingStatus  string                  `json:"stemmingStatus"`
+	WordcloudStatus string                  `json:"wordcloudStatus"`
+	Events          []pipelineEventResponse `json:"events"`
+	CreatedAt       time.Time               `json:"createdAt"`
+	UpdatedAt       time.Time               `json:"updatedAt"`
 }
 
 // ServeHTTP routes to the appropriate handler method.
@@ -73,7 +102,7 @@ func (h *ArticlesHandler) createArticle(w http.ResponseWriter, r *http.Request) 
 
 	if exists {
 		// Return the existing article (idempotent response).
-		article, err := h.queryArticleByID(r, existingArticleID)
+		article, err := h.queryArticleDetail(r, existingArticleID)
 		if err != nil {
 			http.Error(w, `{"error":"failed to fetch existing article"}`, http.StatusInternalServerError)
 			return
@@ -154,23 +183,23 @@ func (h *ArticlesHandler) createArticle(w http.ResponseWriter, r *http.Request) 
 		RetryCount:  0,
 	}
 
-	if err := h.Broker.Publish(r.Context(), "article.stemming", job); err != nil {
+	if err := h.Broker.Publish(r.Context(), broker.RoutingKeyStemming, job); err != nil {
 		log.Printf("[articles] publish stemming error: %v", err)
 	}
-	if err := h.Broker.Publish(r.Context(), "article.wordcloud", job); err != nil {
+	if err := h.Broker.Publish(r.Context(), broker.RoutingKeyWordcloud, job); err != nil {
 		log.Printf("[articles] publish wordcloud error: %v", err)
 	}
 
 	log.Printf("[articles] created article=%s sender=%s receiver=%s hash=%s",
 		articleID, req.SenderID, req.ReceiverID, contentHash[:12])
 
-	// Return the created article.
-	article, err := h.queryArticleByID(r, articleID)
+	// Return the created article in frontend-compatible shape.
+	article, err := h.queryArticleDetail(r, articleID)
 	if err != nil {
 		// Article was created but fetch failed — still return 202 with minimal info.
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode(map[string]string{"id": articleID, "status": "queued"})
+		json.NewEncoder(w).Encode(map[string]string{"articleId": articleID, "status": "queued"})
 		return
 	}
 
@@ -181,7 +210,7 @@ func (h *ArticlesHandler) createArticle(w http.ResponseWriter, r *http.Request) 
 
 // getArticle handles GET /articles/:id.
 func (h *ArticlesHandler) getArticle(w http.ResponseWriter, r *http.Request, id string) {
-	article, err := h.queryArticleByID(r, id)
+	article, err := h.queryArticleDetail(r, id)
 	if err != nil {
 		http.Error(w, `{"error":"article not found"}`, http.StatusNotFound)
 		return
@@ -191,31 +220,60 @@ func (h *ArticlesHandler) getArticle(w http.ResponseWriter, r *http.Request, id 
 	json.NewEncoder(w).Encode(article)
 }
 
-// queryArticleByID fetches an article with its processing results.
-func (h *ArticlesHandler) queryArticleByID(r *http.Request, id string) (*models.Article, error) {
-	var a models.Article
-	var p models.ArticleProcessingResult
+// queryArticleDetail fetches an article with processing results, sender/receiver
+// names, and pipeline events — shaped to match frontend/types/articles.ts ArticleDetail.
+func (h *ArticlesHandler) queryArticleDetail(r *http.Request, id string) (*articleDetailResponse, error) {
+	var resp articleDetailResponse
+	var wordFreqRaw *json.RawMessage
 
 	err := h.Pool.QueryRow(r.Context(),
 		`SELECT
-			a.id, a.sender_id, a.receiver_id, a.title, a.content, a.content_hash,
-			a.status, a.created_at, a.updated_at,
+			a.id, a.sender_id, su.name, a.receiver_id, ru.name,
+			a.title, a.content, a.content_hash, a.status,
 			p.stemmed_content, p.word_frequencies_json, p.stemming_status, p.wordcloud_status,
-			p.processing_started_at, p.processing_finished_at
+			a.created_at, a.updated_at
 		 FROM articles a
 		 LEFT JOIN article_processing_results p ON a.id = p.article_id
+		 LEFT JOIN users su ON su.id = a.sender_id
+		 LEFT JOIN users ru ON ru.id = a.receiver_id
 		 WHERE a.id = $1`, id,
 	).Scan(
-		&a.ID, &a.SenderID, &a.ReceiverID, &a.Title, &a.Content, &a.ContentHash,
-		&a.Status, &a.CreatedAt, &a.UpdatedAt,
-		&p.StemmedContent, &p.WordFrequenciesJSON, &p.StemmingStatus, &p.WordcloudStatus,
-		&p.ProcessingStartedAt, &p.ProcessingFinishedAt,
+		&resp.ID, &resp.SenderID, &resp.SenderName, &resp.ReceiverID, &resp.ReceiverName,
+		&resp.Title, &resp.Content, &resp.ContentHash, &resp.Status,
+		&resp.StemmedContent, &wordFreqRaw, &resp.StemmingStatus, &resp.WordcloudStatus,
+		&resp.CreatedAt, &resp.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	p.ArticleID = a.ID
-	a.Processing = &p
-	return &a, nil
+	// Parse word_frequencies_json (stored as JSON string) into map[string]int.
+	resp.WordFrequencies = map[string]int{}
+	if wordFreqRaw != nil {
+		_ = json.Unmarshal(*wordFreqRaw, &resp.WordFrequencies)
+	}
+
+	// Fetch pipeline events, chronological order.
+	resp.Events = []pipelineEventResponse{}
+	rows, err := h.Pool.Query(r.Context(),
+		`SELECT service_name, event_type, message, created_at
+		 FROM pipeline_events
+		 WHERE article_id = $1
+		 ORDER BY created_at ASC`, id)
+	if err != nil {
+		log.Printf("[articles] query pipeline events error: %v", err)
+		return &resp, nil // events kosong, tapi artikel tetap dikembalikan
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var e pipelineEventResponse
+		if err := rows.Scan(&e.ServiceName, &e.EventType, &e.Message, &e.CreatedAt); err != nil {
+			log.Printf("[articles] scan pipeline event error: %v", err)
+			continue
+		}
+		resp.Events = append(resp.Events, e)
+	}
+
+	return &resp, nil
 }
