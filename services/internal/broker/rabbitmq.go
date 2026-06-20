@@ -12,6 +12,14 @@ import (
 	"articleswap-scalable/services/internal/config"
 )
 
+const (
+	RoutingKeySubmitted  = "article.submitted"
+	RoutingKeyStemming   = "article.stemming"
+	RoutingKeyWordcloud  = "article.wordcloud"
+	RoutingKeyAggregator = "article.aggregator"
+	RoutingKeyFailed     = "article.failed"
+)
+
 // Broker wraps RabbitMQ connection and channel for publish/consume operations.
 type Broker struct {
 	conn     *amqp.Connection
@@ -125,6 +133,10 @@ func (b *Broker) Publish(ctx context.Context, routingKey string, body interface{
 			Timestamp:    time.Now(),
 		},
 	)
+}
+
+func (b *Broker) PublishFailed(ctx context.Context, job interface{}) error {
+	return b.Publish(ctx, "article.failed", job)
 }
 
 // Consume returns a channel of deliveries for the specified queue.
