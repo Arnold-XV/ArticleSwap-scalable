@@ -1,4 +1,4 @@
-.PHONY: help env up down logs ps scale-workers stress-baseline stress-stress stress-cache stress-idempotency stress-degraded
+.PHONY: help env up down logs ps scale-workers stress-baseline stress-stress stress-cache stress-idempotency stress-degraded stress-metrics stress-ratelimit stress-pipeline stress-pool
 
 help:
 	@echo "ArticleSwap commands:"
@@ -13,6 +13,10 @@ help:
 	@echo "  make stress-cache        Jalankan test cache Redis"
 	@echo "  make stress-idempotency  Jalankan test idempotency"
 	@echo "  make stress-degraded     Jalankan test degraded mode"
+	@echo "  make stress-metrics      Jalankan test endpoint metrics"
+	@echo "  make stress-ratelimit    Jalankan test rate limiting"
+	@echo "  make stress-pipeline     Jalankan test pipeline end-to-end"
+	@echo "  make stress-pool         Jalankan test connection pool saturation"
 
 env:
 	@if not exist .env copy .env.example .env
@@ -46,4 +50,16 @@ stress-idempotency:
 
 stress-degraded:
 	k6 run stress/degraded-test.js
+
+stress-metrics:
+	k6 run stress/metrics-test.js
+
+stress-ratelimit:
+	k6 run stress/ratelimit-test.js
+
+stress-pipeline:
+	k6 run stress/pipeline-test.js
+
+stress-pool:
+	k6 run stress/pool-saturation-test.js
 
