@@ -54,6 +54,41 @@ flowchart LR
 
 Penjelasan lengkap ada di [docs/ARSITEKTUR.md](docs/ARSITEKTUR.md).
 
+## Alur Pengguna (User Flow)
+
+Berikut adalah diagram alur urutan (*sequence diagram*) pengiriman artikel secara asinkron dari pengirim hingga ke penerima:
+
+```mermaid
+sequenceDiagram
+    actor Pengirim
+    actor Penerima
+    participant Frontend
+    participant Gateway as API Gateway Go
+    participant Broker as RabbitMQ
+    participant Worker as Worker Pipeline
+    participant DB as PostgreSQL
+    participant Cache as Redis
+
+    Pengirim->>Frontend: Input judul, isi artikel, & penerima
+    Frontend->>Gateway: POST /articles (dengan idempotencyKey)
+    Note over Gateway: Hitung content_hash & validasi
+    Gateway->>DB: Simpan artikel (status: queued)
+    Gateway->>Broker: Kirim job ke queue (articles.submitted)
+    Gateway-->>Frontend: HTTP 201 Created (ID Artikel)
+    Frontend-->>Pengirim: Tampilkan "Artikel Terkirim (Sedang Diproses)"
+    
+    Broker->>Worker: Ambil tugas dari antrean secara paralel
+    Note over Worker: Proses Stemming & Word Cloud
+    Worker->>Cache: Simpan hasil olahan ke Redis Cache
+    Worker->>DB: Simpan hasil olahan & update status artikel
+    
+    Penerima->>Frontend: Buka kotak masuk (inbox)
+    Frontend->>Gateway: GET /users/:id/inbox
+    Gateway->>DB: Ambil artikel & hasil olahan
+    Gateway-->>Frontend: Kirim daftar artikel
+    Frontend-->>Penerima: Tampilkan teks asli + hasil stemming & word cloud
+```
+
 ## Cara Menjalankan
 
 Salin file environment:
